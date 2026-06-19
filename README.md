@@ -83,8 +83,12 @@ Requires ESP-IDF v6.x and a classic ESP32 over USB serial.
 
 ```sh
 cd bridge
-idf.py build flash monitor
+. $HOME/esp/esp-idf/export.sh        # source ESP-IDF (once per terminal)
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
+
+Full build / flash / monitor commands (sourcing, monitor-without-reflash,
+erasing) are in [`bridge/FLASHING.md`](bridge/FLASHING.md).
 
 First boot (or when it can't reach a saved network) the bridge starts a WiFi
 setup access point — see [`bridge/WIFI-SETUP.md`](bridge/WIFI-SETUP.md). Once it
