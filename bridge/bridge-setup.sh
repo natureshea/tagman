@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# inktags-bridge WiFi setup — run AFTER joining the "inktags-bridge-setup" AP.
+# inktags-bridge WiFi setup - run AFTER joining the "inktags-bridge-setup" AP.
 # Usage:  ./bridge-setup.sh "YourSSID" "YourPassword"
 set -euo pipefail
 

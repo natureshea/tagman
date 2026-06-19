@@ -41,8 +41,7 @@ func (s *Server) txFor(ctx context.Context, b store.Binding) transport.Transport
 			addr = br.Address
 		}
 	}
-	// No bridge assigned: fall back to the first registered bridge so pushes
-	// reach real hardware instead of the Fake transport.
+	// No bridge assigned: fall back to the first registered bridge.
 	if addr == "" {
 		if brs, err := s.Store.ListBridges(ctx); err == nil && len(brs) > 0 {
 			addr = brs[0].Address
@@ -74,7 +73,7 @@ func (s *Server) Routes() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
-	// Keep favicon off the catch-all "/" so it doesn't run handleIndex's bridge work.
+	// Favicon has its own route; the catch-all "/" runs bridge probes.
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -92,12 +91,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	addrs := make([]string, 0, len(bridges))
 	for i := range bridges {
 		addrs = append(addrs, bridges[i].Address)
-		// Probe live so the Status column reflects reachability.
+		// Live probe for the Status column.
 		bridges[i].Healthy = s.Router.For(bridges[i].Address).Health(ctx).Healthy
 	}
 
-	// Do not scan on page load: a BLE scan ties up the bridge and would collide
-	// with any in-flight push. "Tags in range" is populated on demand via /api/scan.
+	// No scan on page load; a scan ties up the bridge. Tags load on demand via /api/scan.
 	health := s.Router.AnyHealthy(ctx, addrs)
 
 	data := map[string]any{
@@ -128,8 +126,8 @@ type upsertReq struct {
 	BridgeID   string `json:"bridge_id"`
 }
 
-// saveBinding upserts one binding, preferring the cached catalog name+price over
-// whatever the form sent, then queues its push. Returns the stored binding.
+// saveBinding upserts one binding and queues its push. Cached catalog name+price
+// override the form values. Returns the stored binding.
 func (s *Server) saveBinding(ctx context.Context, req upsertReq) (store.Binding, error) {
 	b := store.Binding{
 		MAC:        req.MAC,
@@ -289,7 +287,7 @@ func (s *Server) handleAddBridge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	// Probe health right away so the UI reflects reality.
+	// Probe health now for the UI.
 	h := s.Router.For(req.Address).Health(r.Context())
 	writeJSON(w, map[string]any{"status": "added", "healthy": h.Healthy, "detail": h.Detail})
 }
@@ -302,8 +300,7 @@ func (s *Server) handleDeleteBridge(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "deleted"})
 }
 
-// handleSearchItems backs the searchable picker, reading from the in-memory
-// catalog cache so it never blocks on an upstream call.
+// handleSearchItems backs the picker from the in-memory cache. No upstream call.
 func (s *Server) handleSearchItems(w http.ResponseWriter, r *http.Request) {
 	if s.Cache == nil {
 		writeJSON(w, []any{}) // catalog not configured
@@ -314,8 +311,8 @@ func (s *Server) handleSearchItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, items)
 }
 
-// handlePreview renders an item face to PNG so you can see exactly what would
-// be pushed, with no physical tag. Query: ?name=...&price=cents  OR ?mac=...
+// handlePreview renders an item face to PNG, no tag needed.
+// Query: ?name=...&price=cents  OR ?mac=...
 func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	var it render.Item
 	if mac := r.URL.Query().Get("mac"); mac != "" {
@@ -335,7 +332,7 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		}
 		it = render.Item{Name: name, PriceCents: cents}
 	}
-	// Build the face via the schema; query params may override font/size:
+	// Build the face. Query params may override font/size:
 	// namefont/pricefont (bold|regular|medium|mono|monobold|smallcaps),
 	// namesize/pricesize (px).
 	sc := render.DefaultSchema()
@@ -425,9 +422,9 @@ func optsFromQuery(r *http.Request) render.EncodeOpts {
 }
 
 // handleTestPattern previews or pushes the orientation diagnostic face.
-//   GET /api/testpattern              → upright source PNG
-//   GET /api/testpattern?enc=1        → exact bytes we'd send (rotated framebuffer)
-//   GET /api/testpattern?push=1&mac=… → push it to the tag
+//   GET /api/testpattern              upright source PNG
+//   GET /api/testpattern?enc=1        the bytes we'd send (rotated framebuffer)
+//   GET /api/testpattern?push=1&mac=  push it to the tag
 // All forms accept tft/rot/mx/my/inv (see optsFromQuery).
 func (s *Server) handleTestPattern(w http.ResponseWriter, r *http.Request) {
 	o := optsFromQuery(r)
@@ -437,9 +434,8 @@ func (s *Server) handleTestPattern(w http.ResponseWriter, r *http.Request) {
 	var disp *image.Paletted // upright display orientation (for preview)
 	encode := func() []byte { return render.GiciskyEncodeOpts(img, o) }
 	if native {
-		// Pack grid = the panel's framebuffer dims (default 264×125; override with
-		// sw/sh). Author in display orientation, then rotate CCW to cancel the
-		// panel's 90° scan.
+		// Pack grid is the panel framebuffer dims (default 264x125, override sw/sh).
+		// Author upright, then rotate CCW to undo the panel's 90-degree scan.
 		pgw, pgh := render.NativeW, render.NativeH
 		if o.SrcW > 0 {
 			pgw = o.SrcW
@@ -542,14 +538,14 @@ func (s *Server) ReconcileChanged(ctx context.Context, changedItemIDs []string) 
 				b.PriceCents = price
 				_ = s.Store.Upsert(ctx, b)
 			}
-			// Queue rather than push inline so many tags drain one at a time.
+			// Queue instead of pushing inline; tags drain one at a time.
 			s.queue.enqueue(b)
 		}
 	}
 }
 
-// handleCloverWebhook logs the payload and returns 200 so Clover's verification
-// handshake succeeds. Not yet wired to reconciliation.
+// handleCloverWebhook logs and returns 200 for Clover's verification handshake.
+// Not wired to reconciliation yet.
 func (s *Server) handleCloverWebhook(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage
 	_ = json.NewDecoder(r.Body).Decode(&raw)
@@ -557,8 +553,8 @@ func (s *Server) handleCloverWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// pushBinding renders the item face and sends it via the transport. Returns
-// whether the tag was actually reached, and a detail string when it wasn't.
+// pushBinding renders the face and pushes it. Returns whether the tag was
+// reached, plus a detail string on failure.
 func (s *Server) pushBinding(ctx context.Context, b store.Binding) (bool, string) {
 	tx := s.txFor(ctx, b)
 	if h := tx.Health(ctx); !h.Healthy {
@@ -572,7 +568,7 @@ func (s *Server) pushBinding(ctx context.Context, b store.Binding) (bool, string
 		Height: render.Height,
 		Bits:   render.GiciskyEncode(img), // bridge transfers opaquely
 	}
-	// Use the caller's deadline as-is; the queue budgets the full scan + transfer.
+	// No timeout here; the queue's context bounds the push.
 	if err := tx.Push(ctx, fb); err != nil {
 		s.Log.Error("push failed", "mac", b.MAC, "err", err)
 		return false, err.Error()

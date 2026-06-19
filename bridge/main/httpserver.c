@@ -31,8 +31,7 @@ static esp_err_t h_scan(httpd_req_t *req)
     return r;
 }
 
-// GET /dump?mac=FF:FF:.. -> connect to the tag and log its GATT table to the
-// serial monitor. Used to discover the Gicisky image/command characteristics.
+// GET /dump?mac=FF:FF:.. -> log the tag's GATT table to serial.
 static esp_err_t h_dump(httpd_req_t *req)
 {
     char query[96], mac[24] = {0};
@@ -47,7 +46,7 @@ static esp_err_t h_dump(httpd_req_t *req)
     }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req,
-        "{\"ok\":true,\"note\":\"dumping — watch serial monitor for DUMP lines\"}",
+        "{\"ok\":true,\"note\":\"dumping - watch serial monitor for DUMP lines\"}",
         HTTPD_RESP_USE_STRLEN);
 }
 
@@ -134,7 +133,7 @@ static esp_err_t h_config(httpd_req_t *req)
     cJSON_Delete(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"ok\":true,\"note\":\"saved; restarting to apply\"}", HTTPD_RESP_USE_STRLEN);
-    // Restart to apply the new creds; delay first so the response flushes.
+    // Restart to apply. Delay first so the response flushes.
     ESP_LOGW(TAG, "new creds saved -> restarting in 1s");
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();

@@ -1,73 +1,68 @@
 # Building, flashing, and monitoring the bridge
 
-Firmware for a classic ESP32, built with **ESP-IDF v6.x**. Run all commands from
-the `bridge/` directory.
+Firmware for a classic ESP32, built with ESP-IDF v6.x. Run everything from the
+`bridge/` directory.
 
-## 1. Source the ESP-IDF environment
+## Source ESP-IDF
 
-`idf.py` is only available after you source ESP-IDF, and you must do this **once
-per new terminal**:
+`idf.py` only exists after you source ESP-IDF. Do this in every new terminal:
 
 ```sh
 . $HOME/esp/esp-idf/export.sh
 ```
 
-(Adjust the path to wherever you installed ESP-IDF. Many setups alias this as
-`get_idf` — if so, just run `get_idf`.)
+Use your own ESP-IDF path. If you set up the `get_idf` alias, just run that.
 
-## 2. Find the serial port
+## Find the serial port
 
-With the ESP32 plugged in over USB:
+ESP32 plugged in over USB:
 
-- **Linux:** `/dev/ttyUSB0` (check `ls /dev/ttyUSB*`). If you get a permission
-  error, add yourself to the `dialout` group: `sudo usermod -aG dialout $USER`
-  (log out/in after).
-- **macOS:** `/dev/tty.usbserial-*` or `/dev/tty.SLAB_USBtoUART` (`ls /dev/tty.*`).
-- **Windows:** `COM3`, `COM4`, … (Device Manager → Ports).
+- Linux: `/dev/ttyUSB0` (`ls /dev/ttyUSB*`). Permission denied? Add yourself to
+  the `dialout` group: `sudo usermod -aG dialout $USER`, then log out and back in.
+- macOS: `/dev/tty.usbserial-*` or `/dev/tty.SLAB_USBtoUART` (`ls /dev/tty.*`).
+- Windows: `COM3`, `COM4`, ... (Device Manager, under Ports).
 
-Substitute your port for `/dev/ttyUSB0` below.
+Use your port wherever the commands below say `/dev/ttyUSB0`.
 
-## 3. Set the target (first time only)
+## Set the target (first time only)
 
 ```sh
 idf.py set-target esp32
 ```
 
-## 4. Build, flash, monitor
+## Build, flash, monitor
 
-Build, flash, and open the serial monitor in one go:
+Do all three at once:
 
 ```sh
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-Individual steps:
+Or one at a time:
 
 ```sh
-idf.py build                          # compile only
-idf.py -p /dev/ttyUSB0 flash          # flash only (builds if needed)
-idf.py -p /dev/ttyUSB0 monitor        # attach to the running device — NO reflash
+idf.py build                          # compile
+idf.py -p /dev/ttyUSB0 flash          # flash (builds first if needed)
+idf.py -p /dev/ttyUSB0 monitor        # watch logs, no reflash
 ```
 
-Use `idf.py monitor` whenever you just want to watch logs (e.g. WiFi join, BLE
-push progress) without rebuilding or reflashing.
+Run `idf.py monitor` on its own to watch the logs (WiFi, BLE pushes) without
+rebuilding or reflashing. Quit the monitor with `Ctrl-]`.
 
-**Exit the monitor:** `Ctrl-]`
+## Save the logs to a file
 
-## Capturing logs to a file
-
-The monitor streams to your terminal but doesn't save anything. To keep a copy:
+The monitor prints to your terminal and saves nothing. To keep a copy:
 
 ```sh
 idf.py -p /dev/ttyUSB0 monitor 2>&1 | tee monitor.log
 ```
 
-(`monitor.log` is gitignored.)
+`monitor.log` is gitignored.
 
-## Erasing flash
+## Erase flash
 
-Wipes everything, including the stored WiFi credentials (NVS) — the bridge then
-boots into its setup access point (see [WIFI-SETUP.md](WIFI-SETUP.md)):
+Wipes everything, including the saved WiFi credentials. The bridge then boots
+into its setup access point (see [WIFI-SETUP.md](WIFI-SETUP.md)):
 
 ```sh
 idf.py -p /dev/ttyUSB0 erase-flash
@@ -76,8 +71,8 @@ idf.py -p /dev/ttyUSB0 flash
 
 ## Notes
 
-- Default monitor baud is 115200.
-- The first build downloads managed components (`idf_component.yml`); needs
-  network. After that, builds are offline.
-- After a successful boot the bridge prints `got ip: <address>` once it joins
-  WiFi — that IP is what you register in the web UI.
+- Monitor baud is 115200.
+- The first build downloads managed components and needs network. After that it
+  builds offline.
+- Once it joins WiFi the bridge prints `got ip: <address>`. Register that IP in
+  the web UI.

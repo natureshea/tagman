@@ -7,15 +7,13 @@ import (
 	"time"
 )
 
-// FakeSource is a preset, in-memory catalog that satisfies Source, for running
-// the pipeline without Clover credentials. Prices are mutable via Bump.
+// FakeSource is an in-memory catalog for running without Clover creds.
 type FakeSource struct {
 	mu       sync.RWMutex
 	items    map[string]Item
 	modified map[string]time.Time
 }
 
-// NewFakeSource seeds a handful of items.
 func NewFakeSource() *FakeSource {
 	f := &FakeSource{
 		items:    map[string]Item{},
@@ -71,8 +69,7 @@ func (f *FakeSource) ChangedSince(ctx context.Context, t time.Time) ([]Item, err
 	return out, nil
 }
 
-// Bump changes an item's price and marks it modified now, simulating a catalog
-// price change.
+// Bump sets a new price and marks the item modified now.
 func (f *FakeSource) Bump(id string, newPriceCents int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

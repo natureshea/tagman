@@ -18,8 +18,7 @@ import (
 	"inktags/internal/transport"
 )
 
-// syncBuffer is a goroutine-safe log sink: the queue worker writes logs while
-// tests read them, so access is locked.
+// syncBuffer is a goroutine-safe log sink. The queue worker writes while tests read.
 type syncBuffer struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -37,8 +36,7 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// waitFor polls cond until true or it times out, for asserting on the
-// asynchronous push queue.
+// waitFor polls cond until true or times out. Used to assert on the async push queue.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -51,9 +49,8 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// buildServer creates a Server wired with fakes: a store at dbPath, a FakeSource
-// seeded with 6 presets, a Cache warmed from it, and a buffer-backed logger. The
-// caller must call st.Close() when done.
+// buildServer wires a Server with fakes: store at dbPath, FakeSource (6 presets),
+// a Cache warmed from it, buffer-backed logger. Caller must st.Close().
 func buildServer(t *testing.T, dbPath string, logBuf *syncBuffer) (*Server, *items.FakeSource, *store.Store) {
 	t.Helper()
 	st, err := store.Open(dbPath)
@@ -221,7 +218,7 @@ func TestPipe02PreviewPNG(t *testing.T) {
 		srv, _, st := buildServer(t, dbPath, &logBuf)
 		defer st.Close()
 
-		// Bind the MAC directly via the store so preview?mac= can look it up.
+		// Bind via the store; preview?mac= looks it up.
 		ctx := context.Background()
 		if err := srv.Store.Upsert(ctx, store.Binding{
 			MAC:        "FF:FF:92:96:60:21",
@@ -249,11 +246,11 @@ func TestPipe02PreviewPNG(t *testing.T) {
 	})
 }
 
-// TestPipe03HealthyRePush verifies that with a healthy transport
-// (INKTAGS_FAKE_HEALTHY=1), ReconcileChanged fires pushBinding, which logs
-// "fake push" and calls MarkPushed. Uses t.Setenv, so no t.Parallel.
+// TestPipe03HealthyRePush: a healthy transport (INKTAGS_FAKE_HEALTHY=1) makes
+// ReconcileChanged push, log "fake push", and call MarkPushed. Uses t.Setenv,
+// no t.Parallel.
 func TestPipe03HealthyRePush(t *testing.T) {
-	// NewFake reads INKTAGS_FAKE_HEALTHY at construction, so set it first.
+	// NewFake reads INKTAGS_FAKE_HEALTHY at construction. Set it first.
 	t.Setenv("INKTAGS_FAKE_HEALTHY", "1")
 
 	dbPath := filepath.Join(t.TempDir(), "t.db")
@@ -280,8 +277,8 @@ func TestPipe03HealthyRePush(t *testing.T) {
 	its, _ := fakeSource.List(ctx)
 	srv.Cache.Replace(its)
 
-	// Fire ReconcileChanged (the poller's OnChange callback). The push is
-	// delivered asynchronously, so wait for MarkPushed to set LastPushedAt.
+	// Fire ReconcileChanged (the poller's OnChange callback). Push is async.
+	// Wait for MarkPushed to set LastPushedAt.
 	srv.ReconcileChanged(ctx, []string{"FAKE-COFFEE-001"})
 	waitFor(t, "queued push to complete", func() bool {
 		b, err := st.Get(ctx, "FF:FF:92:96:60:21")
@@ -311,7 +308,7 @@ func TestPipe03HealthyRePush(t *testing.T) {
 // TestPipe03HonestSkip verifies the default unhealthy transport logs
 // "push skipped: transport unhealthy" and does not call MarkPushed.
 func TestPipe03HonestSkip(t *testing.T) {
-	// Do not set INKTAGS_FAKE_HEALTHY; the default transport is unhealthy.
+	// Leave INKTAGS_FAKE_HEALTHY unset. Default transport is unhealthy.
 	dbPath := filepath.Join(t.TempDir(), "t.db")
 	var logBuf syncBuffer
 	srv, _, st := buildServer(t, dbPath, &logBuf)
@@ -329,7 +326,7 @@ func TestPipe03HonestSkip(t *testing.T) {
 		t.Fatalf("upsert binding: %v", err)
 	}
 
-	// The skip happens on the queue worker, so wait for it to be logged.
+	// The skip happens on the queue worker. Wait for the log.
 	srv.ReconcileChanged(ctx, []string{"FAKE-COFFEE-001"})
 	waitFor(t, "unhealthy skip to be logged", func() bool {
 		return strings.Contains(logBuf.String(), "push skipped: transport unhealthy")

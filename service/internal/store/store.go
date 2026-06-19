@@ -17,7 +17,7 @@ type Binding struct {
 	ItemID       string
 	ItemName     string // denormalized for UI; refreshed on catalog sync
 	PriceCents   int64
-	BridgeID     string // which bridge reaches this tag ("" = none/fake)
+	BridgeID     string // bridge reaching this tag ("" = none/fake)
 	LastPushedAt *time.Time
 	UpdatedAt    time.Time
 }
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_bindings_item ON bindings(item_id);
 	return s.migrateBridges()
 }
 
-// Upsert creates a new binding or re-points an existing tag to another item.
+// Upsert inserts a binding or re-points an existing tag to another item.
 func (s *Store) Upsert(ctx context.Context, b Binding) error {
 	b.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
@@ -101,7 +101,7 @@ func (s *Store) List(ctx context.Context) ([]Binding, error) {
 	return out, rows.Err()
 }
 
-// ByItem returns all tags bound to a given item, for refreshing on change.
+// ByItem returns all tags bound to an item.
 func (s *Store) ByItem(ctx context.Context, itemID string) ([]Binding, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT mac, item_id, item_name, price_cents, bridge_id, last_pushed_at, updated_at

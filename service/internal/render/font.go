@@ -17,23 +17,23 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// Vector-font rendering: draw a real TrueType face at the requested pixel size,
-// then threshold to 1bpp. The Go font family ships inside golang.org/x/image, so
-// several weights are available without external files (see FontID).
+// Vector-font rendering: draw a TrueType face at the requested pixel size, then
+// threshold to 1bpp. The Go fonts ship in golang.org/x/image; several weights
+// are available without external files.
 
 // FontID selects a bundled Go font face. Zero value = FontBold.
 type FontID int
 
 const (
-	FontBold      FontID = iota // Go Bold — heavy, best default for small 1bpp
+	FontBold      FontID = iota // Go Bold, best default for small 1bpp
 	FontRegular                 // Go Regular
-	FontMedium                  // Go Medium — between regular and bold
+	FontMedium                  // Go Medium
 	FontMono                    // Go Mono
 	FontMonoBold                // Go Mono Bold
 	FontSmallCaps               // Go Smallcaps
 )
 
-// FontByName maps a lowercase name to a FontID (unknown → FontBold). Names:
+// FontByName maps a name to a FontID; unknown falls back to FontBold. Names:
 // bold, regular, medium, mono, monobold, smallcaps.
 func FontByName(s string) FontID {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -88,7 +88,7 @@ func parsedFont(id FontID) *opentype.Font {
 	return f
 }
 
-// faceFor returns a cached face for (font, pixel size). DPI 72 → points == px.
+// faceFor returns a cached face for (font, pixel size). At DPI 72, points == px.
 func faceFor(id FontID, px float64) font.Face {
 	key := faceKey{id: id, px10: int(px*10 + 0.5)}
 	fontMu.Lock()
@@ -127,8 +127,8 @@ func ttfLineHeight(id FontID, px float64) int {
 	return m.Ascent.Ceil() + m.Descent.Ceil()
 }
 
-// drawTTFLine draws one line with its top-left at (x, yTop), thresholding the
-// anti-aliased glyphs to black ink (palette index 1). SetColorIndex clips OOB.
+// drawTTFLine draws one line with top-left at (x, yTop), thresholding AA glyphs
+// to black ink (palette index 1). SetColorIndex clips OOB.
 func drawTTFLine(dst *image.Paletted, s string, x, yTop int, id FontID, px float64) {
 	fc := faceFor(id, px)
 	if fc == nil || s == "" {

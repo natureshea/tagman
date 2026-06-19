@@ -8,9 +8,8 @@ import (
 	"strings"
 )
 
-// Framebuffer is a rendered, panel-native 1bpp image ready to push to a tag.
-// Width/Height are the logical pixel dimensions; Bits is packed 1bpp in the
-// panel's native byte/rotation order (the renderer is responsible for that).
+// Framebuffer is a rendered 1bpp image ready to push. Width/Height are logical
+// pixels. Bits is packed 1bpp in the panel's native byte/rotation order.
 type Framebuffer struct {
 	MAC    string
 	Width  int
@@ -25,9 +24,8 @@ type TagInfo struct {
 	RSSI int
 }
 
-// Label returns the human-facing tag number printed on the device: the last
-// four bytes of the BLE address, dotted. FF:FF:92:96:60:21 -> "92.96.60.21".
-// This is what's physically on the tag, so it's the natural lookup key.
+// Label returns the tag number printed on the device: last four bytes of the
+// BLE address, dotted. FF:FF:92:96:60:21 -> "92.96.60.21".
 func Label(mac string) string {
 	parts := strings.Split(mac, ":")
 	if len(parts) >= 4 {
@@ -43,14 +41,14 @@ type TagState struct {
 	BatterymV int    // 0 if unknown
 }
 
-// Health reports whether a transport can actually reach tags right now.
+// Health reports whether a transport can reach tags right now.
 type Health struct {
 	Healthy bool
 	Detail  string // human-readable reason, esp. when unhealthy
 }
 
-// Transport is the swappable bottom layer that talks to tags. Implemented by
-// Fake and NetBridge; nothing above this interface knows which is wired in.
+// Transport is the swappable layer that talks to tags. Implemented by Fake and
+// NetBridge.
 type Transport interface {
 	Push(ctx context.Context, fb Framebuffer) error
 	Scan(ctx context.Context) ([]TagInfo, error)
@@ -59,9 +57,8 @@ type Transport interface {
 	Name() string
 }
 
-// Fake logs what it would do, letting the product run with no tags/firmware/BLE.
-// By default it reports unhealthy and refuses pushes; set INKTAGS_FAKE_HEALTHY=1
-// to make it pretend it can reach tags.
+// Fake logs what it would do. Runs with no tags/firmware/BLE. Reports unhealthy
+// and refuses pushes unless INKTAGS_FAKE_HEALTHY=1.
 type Fake struct {
 	Log     *slog.Logger
 	Healthy bool
@@ -106,7 +103,7 @@ func (f *Fake) Push(ctx context.Context, fb Framebuffer) error {
 }
 
 func (f *Fake) Scan(ctx context.Context) ([]TagInfo, error) {
-	// Pretend the one known dev tag is in range, so the UI has something.
+	// Pretend the known dev tag is in range.
 	return []TagInfo{
 		{MAC: "FF:FF:92:96:60:21", Name: "NEMR92966021", RSSI: -60},
 	}, nil

@@ -6,11 +6,10 @@ import (
 	"time"
 )
 
-// OnChange is called with the IDs of items that changed, so the caller can
-// re-push any tags bound to them.
+// OnChange fires with the IDs of changed items. The caller re-pushes bound tags.
 type OnChange func(ctx context.Context, changedItemIDs []string)
 
-// Poller periodically refreshes the cache from a Source and reports changes.
+// Poller refreshes the cache from a Source and reports changes.
 type Poller struct {
 	Source   Source
 	Cache    *Cache
@@ -47,7 +46,7 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func (p *Poller) tick(ctx context.Context) {
-	since := p.lastPoll.Add(-30 * time.Second) // small overlap
+	since := p.lastPoll.Add(-30 * time.Second) // overlap window
 	changed, err := p.Source.ChangedSince(ctx, since)
 	if err != nil {
 		p.Log.Error("catalog poll failed", "source", p.Source.Name(), "err", err)

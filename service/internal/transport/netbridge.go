@@ -18,14 +18,13 @@ import (
 //	GET  /healthz  -> 200 + {tags_seen:N} when the BLE side is alive
 //	GET  /scan     -> [{mac,name,rssi}]
 //
-// One NetBridge is constructed per address; the Router picks the right one.
+// One NetBridge per address. The Router picks the right one.
 type NetBridge struct {
 	Address string // host:port
 	Log     *slog.Logger
 	http    *http.Client
-	// ble serialises BLE operations (push + scan) so the bridge never handles two
-	// at once — the radio does one thing at a time. Health (/healthz) runs on a
-	// separate firmware task and does not take this lock.
+	// ble serialises BLE ops (push + scan). The radio handles one at a time.
+	// Health (/healthz) runs on a separate firmware task and skips this lock.
 	ble sync.Mutex
 }
 
@@ -36,8 +35,8 @@ func NewNetBridge(address string, log *slog.Logger) *NetBridge {
 	return &NetBridge{
 		Address: address,
 		Log:     log,
-		// No blanket client timeout: a BLE push can take ~35s, far longer than a
-		// health check. Each call sets its own deadline via context instead.
+		// No client timeout. A BLE push can take ~35s. Each call sets its own
+		// context deadline.
 		http: &http.Client{},
 	}
 }
@@ -47,7 +46,7 @@ func (n *NetBridge) Name() string { return "esp32:" + n.Address }
 func (n *NetBridge) base() string { return "http://" + n.Address }
 
 func (n *NetBridge) Health(ctx context.Context) Health {
-	// Short deadline: health is polled by the index page and must stay snappy.
+	// Short deadline; the index page polls this.
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, n.base()+"/healthz", nil)
@@ -93,7 +92,7 @@ func (n *NetBridge) Push(ctx context.Context, fb Framebuffer) error {
 func (n *NetBridge) Scan(ctx context.Context) ([]TagInfo, error) {
 	n.ble.Lock()
 	defer n.ble.Unlock()
-	// The firmware scan window is ~30s; allow for it plus a margin.
+	// Firmware scan window is ~30s. Add margin.
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, n.base()+"/scan", nil)

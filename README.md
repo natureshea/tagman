@@ -1,55 +1,55 @@
 # inktags
 
-Keep the price and name shown on BLE e-ink shelf tags in sync with a shop's
-catalog. A web UI binds a physical tag to a catalog item; the service renders
-the item's current name + price and pushes the image to the tag over an ESP32 →
-BLE bridge, and re-pushes whenever the price changes.
+Keeps the price and name on cheap BLE e-ink shelf tags matching your shop's
+catalog. You bind a tag to a catalog item in the web UI. The service draws the
+item's name and price, sends the image to the tag through an ESP32 bridge, and
+re-sends it whenever the price changes.
 
-Built for cheap **Gicisky / PICKSMART 2.1" black-and-white e-ink tags** and a
-**classic ESP32** (not S3) acting as the BLE bridge.
+Works with Gicisky / PICKSMART 2.1" black-and-white tags and a classic ESP32
+(not the S3).
 
 ## How it works
 
 ```
 catalog (Clover, read-only)
-      │  poll
-      ▼
-  Go service ──render──▶ 1bpp image ──HTTP /push──▶ ESP32 bridge ──BLE──▶ e-ink tag
-      ▲
-   web UI (bind tag ↔ item, batch bind, refresh)
+   |
+   |  poll for changes
+   v
+Go service  --render-->  1bpp image  --HTTP-->  ESP32 bridge  --BLE-->  tag
+   ^
+   |
+web UI: bind a tag to an item, batch-bind, refresh
 ```
 
-- The **service** (`service/`) reads the catalog, renders a tag face (vector
-  font, name + price), stores tag↔item bindings in SQLite, and delivers images
-  to the bridge over HTTP. Pushes run through a serial queue so the bridge only
-  handles one BLE transfer at a time.
-- The **bridge** (`bridge/`) is ESP32 firmware (ESP-IDF + NimBLE) that exposes a
-  small HTTP API and writes images to the tag over the raw Gicisky BLE protocol.
+The service reads the catalog, draws the tag face, remembers which tag maps to
+which item (SQLite), and sends images to the bridge over HTTP. A queue makes sure
+the bridge only handles one tag at a time. The bridge is ESP32 firmware that
+takes an image and writes it to the tag using Gicisky's BLE protocol.
 
-The catalog source is pluggable: `fake` (six built-in demo items, no
-credentials) or `clover` (read-only Clover REST API).
+Pick the catalog source with `INKTAGS_SOURCE`: `fake` gives you six demo items
+and needs nothing else; `clover` reads a real Clover catalog (read-only).
 
-## Repo layout
+## Layout
 
 | Path | What |
 |---|---|
 | `service/` | Go web service (catalog, render, store, push) |
-| `service/internal/render` | 1bpp framebuffer + Gicisky image encoder + layout schema |
-| `service/internal/clover` | Read-only Clover REST client |
-| `service/internal/transport` | HTTP client to the ESP32 bridge |
-| `bridge/main` | ESP32 firmware (BLE push, HTTP server, WiFi) |
+| `service/internal/render` | image encoder and tag layout |
+| `service/internal/clover` | read-only Clover REST client |
+| `service/internal/transport` | HTTP client to the bridge |
+| `bridge/main` | ESP32 firmware (BLE, HTTP, WiFi) |
 
 ## Service
 
-Requires Go 1.22+. Pure-Go SQLite (`modernc.org/sqlite`), no CGo.
+Needs Go 1.22+. SQLite is pure Go (`modernc.org/sqlite`), so no CGo.
 
 ```sh
 cd service
 INKTAGS_SOURCE=fake go run ./cmd/inktags
-# web UI on http://localhost:8080
+# web UI at http://localhost:8080
 ```
 
-Run real Clover (read-only token, inventory scope):
+Real Clover (read-only token, inventory scope):
 
 ```sh
 INKTAGS_SOURCE=clover \
@@ -58,7 +58,7 @@ CLOVER_API_TOKEN=... \
 go run ./cmd/inktags
 ```
 
-Or build the container (`service/Containerfile`, Podman/Docker):
+Container build (`service/Containerfile`, Podman or Docker):
 
 ```sh
 podman build -t inktags -f service/Containerfile service
@@ -72,41 +72,38 @@ podman run -p 8080:8080 -v inktags-data:/data inktags
 | `INKTAGS_SOURCE` | `fake` | Catalog source: `fake` or `clover` |
 | `INKTAGS_DB` | `/data/inktags.db` | SQLite file path |
 | `INKTAGS_ADDR` | `:8080` | HTTP listen address |
-| `CLOVER_MERCHANT_ID` | — | Clover merchant ID (required for `clover`) |
-| `CLOVER_API_TOKEN` | — | Clover bearer token (required for `clover`) |
-| `CLOVER_BASE_URL` | `https://api.clover.com` | Clover API base (`https://apisandbox.dev.clover.com` for sandbox) |
-| `CLOVER_POLL_SECONDS` | `180` | Catalog poll interval |
+| `CLOVER_MERCHANT_ID` | | Clover merchant ID (needed for `clover`) |
+| `CLOVER_API_TOKEN` | | Clover bearer token (needed for `clover`) |
+| `CLOVER_BASE_URL` | `https://api.clover.com` | API base (`https://apisandbox.dev.clover.com` for sandbox) |
+| `CLOVER_POLL_SECONDS` | `180` | How often to poll the catalog |
 
 ## Bridge (firmware)
 
-Requires ESP-IDF v6.x and a classic ESP32 over USB serial.
+Needs ESP-IDF v6.x and a classic ESP32 on USB.
 
 ```sh
 cd bridge
-. $HOME/esp/esp-idf/export.sh        # source ESP-IDF (once per terminal)
+. $HOME/esp/esp-idf/export.sh        # source ESP-IDF once per terminal
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-Full build / flash / monitor commands (sourcing, monitor-without-reflash,
-erasing) are in [`bridge/FLASHING.md`](bridge/FLASHING.md).
-
-First boot (or when it can't reach a saved network) the bridge starts a WiFi
-setup access point — see [`bridge/WIFI-SETUP.md`](bridge/WIFI-SETUP.md). Once it
-joins your network it prints its IP; register that IP as a bridge in the web UI.
+See [bridge/FLASHING.md](bridge/FLASHING.md) for the full build, flash, and
+monitor commands, and [bridge/WIFI-SETUP.md](bridge/WIFI-SETUP.md) for joining
+the bridge to your WiFi. The bridge prints its IP once it connects; that IP is
+what you register in the web UI.
 
 ## Binding tags
 
-1. In the web UI, add your bridge (its IP, no port).
-2. Click **scan** to discover nearby tags (the number on each tag is its ID).
-3. Pick a tag, search for an item, **add** it; stage as many as you want, then
-   **bind all** — they push to the tags one at a time, in order.
-4. Price changes in the catalog are picked up by the poller and re-pushed
-   automatically.
+1. Add your bridge in the web UI (its IP, no port).
+2. Hit **scan** to find nearby tags. The number printed on a tag is its ID.
+3. Pick a tag, search for an item, hit **add**. Stack up as many as you want,
+   then **bind all**. They push to the tags one at a time.
+4. When a price changes in the catalog, the poller catches it and re-pushes.
 
-No physical tag needed to preview a layout: `GET /api/preview?name=…&price=349`.
+To preview a layout without a tag: `GET /api/preview?name=Coffee&price=349`.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md) — free for any noncommercial use; do
-whatever you like with it, just don't sell it or use it to make money. Update the
-`Required Notice` copyright line in `LICENSE.md` with your name.
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for any noncommercial use. Do
+what you want with it, just don't sell it. Put your name on the `Required Notice`
+line in `LICENSE.md`.

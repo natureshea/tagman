@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// Bridge is a network gateway (ESP32) that reaches tags over BLE. The service
-// POSTs images to its HTTP server.
+// Bridge is an ESP32 that reaches tags over BLE. The service POSTs images to it.
 type Bridge struct {
 	ID        string
 	Name      string
@@ -30,7 +29,7 @@ CREATE TABLE IF NOT EXISTS bridges (
 	if err != nil {
 		return err
 	}
-	// Add bridge_id to bindings if missing.
+	// bindings.bridge_id may not exist yet.
 	_, _ = s.db.Exec(`ALTER TABLE bindings ADD COLUMN bridge_id TEXT NOT NULL DEFAULT ''`)
 	return nil
 }

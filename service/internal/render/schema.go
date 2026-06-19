@@ -5,18 +5,17 @@ import (
 	"image/color"
 )
 
-// Schema is a named, declarative tag layout mapping an item's Name + Price into
-// regions on the source-space face, interpreted by RenderSchema. Regions are in
-// source pixels (0,0 = top-left of the 250x122 face); the encode pipeline (2:1
-// reduction + rotate + calibrated fit) is applied afterwards for every schema.
+// Schema is a named tag layout mapping an item's Name and Price to regions of
+// the source face. Regions are in source pixels, 0,0 = top-left of the 250x122
+// face. The encode pipeline (2:1 reduction, rotate, calibrated fit) runs after.
 type Schema struct {
 	Name  string     // preset id, e.g. "price-tag"
 	Title TextBox    // item name
 	Price PriceBox   // formatted price
-	Label *StaticBox // optional fixed text (store name, "EA", …); nil = none
+	Label *StaticBox // optional fixed text (store name, EA); nil = none
 }
 
-// Align positions text horizontally within its region's width.
+// Align positions text horizontally within a region.
 type Align int
 
 const (
@@ -25,9 +24,8 @@ const (
 	AlignRight
 )
 
-// TextBox lays out wrapped vector text within a region. When the text needs
-// more than MaxLines, the last line is ellipsised. SizePx is the font size in
-// source-space pixels.
+// TextBox lays out wrapped vector text in a region. Overflow past MaxLines
+// ellipsizes the last line. SizePx is the font size in source pixels.
 type TextBox struct {
 	X, Y, W, H int
 	SizePx     float64
@@ -36,7 +34,7 @@ type TextBox struct {
 	Align      Align
 }
 
-// PriceBox lays out the formatted price on a single line within a region.
+// PriceBox lays out the formatted price on one line.
 type PriceBox struct {
 	X, Y, W, H int
 	SizePx     float64
@@ -44,7 +42,7 @@ type PriceBox struct {
 	Align      Align
 }
 
-// StaticBox is fixed text baked into the schema (not from the catalog).
+// StaticBox is fixed text baked into the schema.
 type StaticBox struct {
 	Text   string
 	X, Y   int
@@ -54,8 +52,8 @@ type StaticBox struct {
 	Align  Align
 }
 
-// DefaultSchema is the calibrated v1 price tag: name wrapped at the top (2 lines
-// then ellipsis), price large at the bottom-left. Vector font (Go Bold).
+// DefaultSchema is the calibrated v1 price tag: name wrapped at top (2 lines
+// then ellipsis), price large at bottom-left, Go Bold.
 func DefaultSchema() Schema {
 	return Schema{
 		Name:  "price-tag",
@@ -109,8 +107,8 @@ func drawAligned(img *image.Paletted, s string, x, y, w int, id FontID, px float
 	drawTTFLine(img, s, x, y, id, px)
 }
 
-// wrapTTF greedily wraps s to fit maxW at the given font/size, up to maxLines.
-// If text remains, the last line is rune-trimmed and an ellipsis appended.
+// wrapTTF greedily wraps s to maxW at the given font/size, up to maxLines.
+// Leftover text rune-trims the last line and appends an ellipsis.
 func wrapTTF(s string, id FontID, px float64, maxW, maxLines int) []string {
 	words := splitWords(s)
 	var lines []string

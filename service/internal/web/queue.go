@@ -9,17 +9,16 @@ import (
 	"inktags/internal/store"
 )
 
-// pushState is the last known delivery state for one tag, surfaced to the UI.
+// pushState is one tag's last delivery state, shown in the UI.
 type pushState struct {
 	State  string    `json:"state"` // queued | pushing | ok | failed
 	Detail string    `json:"detail,omitempty"`
 	At     time.Time `json:"at"`
 }
 
-// pushQueue serialises tag pushes: one BLE delivery in flight at a time, with a
-// gap between pushes since the radio is shared and the firmware can't scan while
-// pushing. Requests coalesce per MAC (latest binding wins), so rapid refreshes or
-// a price change touching many tags never pile up.
+// pushQueue serialises tag pushes: one BLE delivery at a time, with a gap between
+// them. The radio is shared and can't scan mid-push. Requests coalesce per MAC
+// (latest wins), so rapid refreshes don't pile up.
 type pushQueue struct {
 	push func(context.Context, store.Binding) (bool, string)
 	log  *slog.Logger
@@ -49,8 +48,8 @@ func newPushQueue(ctx context.Context, push func(context.Context, store.Binding)
 	return q
 }
 
-// enqueue schedules a push for b.MAC, coalescing with any push already waiting
-// for the same tag (latest wins).
+// enqueue schedules a push for b.MAC, coalescing with any pending push for the
+// same tag.
 func (q *pushQueue) enqueue(b store.Binding) {
 	q.mu.Lock()
 	if _, waiting := q.pending[b.MAC]; !waiting {
@@ -108,8 +107,8 @@ func (q *pushQueue) run(ctx context.Context) {
 			}
 		}
 		q.setStatus(b.MAC, pushState{State: "pushing", At: time.Now()})
-		// Budget the full delivery (scan + connect + transfer); the bridge client
-		// sets no deadline of its own.
+		// Budget the full delivery: scan + connect + transfer. The bridge client
+		// sets no deadline.
 		pctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		pushed, detail := q.push(pctx, b)
 		cancel()

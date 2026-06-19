@@ -15,8 +15,7 @@
 
 static const char *TAG = "ble_push";
 
-// Scan, connect, and image-push for Gicisky BLE e-ink tags. See the push
-// section below for the fef1/fef2 transfer protocol.
+// Scan, connect, push images to Gicisky BLE e-ink tags. Protocol below.
 
 static bool s_nimble_ready = false;
 static volatile bool s_pushing = false;  // a push transfer is in flight
@@ -64,8 +63,7 @@ static int scan_gap_cb(struct ble_gap_event *event, void *arg)
             e->name[0] = 0;
         }
         ESP_LOGI(TAG, "found tag %s rssi=%d name=%s", e->mac, e->rssi, e->name);
-        // Gicisky manufacturer data (company 0x5053): device id selects the tag
-        // model (geometry/rotation/mirror) for image encoding.
+        // Gicisky mfg data (company 0x5053). device id picks the tag model.
         struct ble_hs_adv_fields mf;
         if (ble_hs_adv_parse_fields(&mf, event->disc.data, event->disc.length_data) == 0 &&
             mf.mfg_data != NULL && mf.mfg_data_len >= 7) {
@@ -116,8 +114,7 @@ char *ble_scan_json(void)
 }
 
 // --- GATT dump --------------------------------------------------------------
-// Connect to a tag by MAC and log its characteristic table (UUID, value handle,
-// properties). Diagnostic helper for discovering a tag's GATT layout.
+// Connect by MAC, log the characteristic table. Diagnostic for GATT layout.
 
 static int parse_mac(const char *s, ble_addr_t *out)
 {
@@ -125,7 +122,7 @@ static int parse_mac(const char *s, ble_addr_t *out)
     if (sscanf(s, "%x:%x:%x:%x:%x:%x",
                &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6)
         return -1;
-    // Display order is big-endian; NimBLE stores the address little-endian.
+    // Display order is big-endian. NimBLE stores it little-endian.
     for (int i = 0; i < 6; i++) out->val[i] = (uint8_t)v[5 - i];
     // Gicisky FF:FF:.. addresses are static random (top two bits of MSB = 11).
     out->type = BLE_ADDR_RANDOM;
@@ -141,7 +138,7 @@ static int dump_chr_cb(uint16_t conn, const struct ble_gatt_error *err,
         ESP_LOGI(TAG, "DUMP CHR uuid=%s val_handle=%u props=0x%02x",
                  uuid, chr->val_handle, chr->properties);
     } else if (err->status == BLE_HS_EDONE) {
-        ESP_LOGI(TAG, "DUMP complete — disconnecting");
+        ESP_LOGI(TAG, "DUMP complete - disconnecting");
         ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
     } else {
         ESP_LOGE(TAG, "DUMP chr-disc error status=%d", err->status);
@@ -169,9 +166,7 @@ static int dump_gap_cb(struct ble_gap_event *event, void *arg)
     }
 }
 
-// Scan-first connect: active-scan, match the target MAC, capture its exact
-// advertised ble_addr_t (val + type), then cancel and connect using that real
-// address type rather than guessing.
+// Scan first, match the MAC, capture its advertised addr+type, then connect.
 static uint8_t s_dump_target[6];   // little-endian, for advert matching
 static bool s_dump_connecting;
 
@@ -180,7 +175,7 @@ static void dump_connect(const ble_addr_t *addr)
     uint8_t own_addr_type;
     if (ble_hs_id_infer_auto(0, &own_addr_type) != 0) return;
     char s[18]; addr_to_str(addr->val, s);
-    ESP_LOGI(TAG, "DUMP found %s (addr_type=%d) — connecting...", s, addr->type);
+    ESP_LOGI(TAG, "DUMP found %s (addr_type=%d) - connecting...", s, addr->type);
     int rc = ble_gap_connect(own_addr_type, addr, 10000, NULL, dump_gap_cb, NULL);
     if (rc != 0) ESP_LOGE(TAG, "DUMP ble_gap_connect rc=%d", rc);
 }
@@ -197,7 +192,7 @@ static int dump_disc_cb(struct ble_gap_event *event, void *arg)
     } else if (event->type == BLE_GAP_EVENT_DISC_COMPLETE) {
         if (s_dump_connecting) {
             s_dump_connecting = false;
-            ESP_LOGE(TAG, "DUMP: target never advertised in window — wake the tag and retry");
+            ESP_LOGE(TAG, "DUMP: target never advertised in window - wake the tag and retry");
         }
     }
     return 0;
@@ -232,13 +227,13 @@ esp_err_t ble_dump_gatt(const char *mac)
 }
 
 // --- push -------------------------------------------------------------------
-// Gicisky image transfer:
+// Gicisky image transfer.
 //   fef1 (REQUEST): write commands, receive notify replies.
 //   fef2 (IMAGE):   write [part(LE32), data] blocks.
 // Sequence: subscribe fef1 notify -> [0x01] (notify [0x01,bs_lo,bs_hi] = block
 // size) -> [0x02,size(LE32)] (notify [0x02,0x00] ok) -> [0x03] -> tag notifies
-// [0x05,0x00,part(LE32)] for each block -> reply [part,data] on fef2 ->
-// [0x05,0x08] = done. `bits` is the already-Gicisky-encoded image, sent opaquely.
+// [0x05,0x00,part(LE32)] per block -> reply [part,data] on fef2 -> [0x05,0x08]
+// = done. `bits` is already Gicisky-encoded.
 
 #define UUID_FEF1 0xfef1
 #define UUID_FEF2 0xfef2
@@ -275,7 +270,7 @@ static void push_cleanup(void)
 static void push_wd_cb(void *arg)
 {
     if (!s_pushing) return;
-    ESP_LOGE(TAG, "PUSH watchdog timeout — aborting (no completion in time)");
+    ESP_LOGE(TAG, "PUSH watchdog timeout - aborting (no completion in time)");
     if (s_push_conn != BLE_HS_CONN_HANDLE_NONE)
         ble_gap_terminate(s_push_conn, BLE_ERR_REM_USER_CONN_TERM);
     else
@@ -292,7 +287,6 @@ static int req_write_cb(uint16_t conn, const struct ble_gatt_error *err,
 
 static int send_req(const uint8_t *data, uint16_t len)  // commands -> fef1
 {
-    // Commands and notifications use fef1; image blocks use fef2.
     int rc = ble_gattc_write_flat(s_push_conn, s_fef1, data, len, req_write_cb, NULL);
     if (rc != 0) ESP_LOGE(TAG, "PUSH req write rc=%d", rc);
     return rc;
@@ -311,9 +305,8 @@ static void send_block(uint32_t part)  // -> fef2
     s_blockbuf[2] = part >> 16; s_blockbuf[3] = part >> 24;
     memcpy(s_blockbuf + 4, s_img + off, n);
     ESP_LOGI(TAG, "PUSH block part=%u len=%u", (unsigned)part, n);
-    // fef2 image blocks must be Write Without Response: a Write Request is
-    // ATT-acked but never reaches the tag's image handler. Flow control is the
-    // notify request/reply on fef1, not ATT acks.
+    // fef2 blocks must be Write Without Response. A Write Request gets ATT-acked
+    // but never reaches the tag's image handler. Flow control is the fef1 notify.
     int rc = ble_gattc_write_no_rsp_flat(s_push_conn, s_fef2, s_blockbuf, n + 4);
     if (rc != 0) ESP_LOGE(TAG, "PUSH block write rc=%d", rc);
 }
@@ -361,7 +354,7 @@ static int push_gap_cb(struct ble_gap_event *event, void *arg)
                 uint32_t part = d[2] | (d[3] << 8) | (d[4] << 16) | ((uint32_t)d[5] << 24);
                 send_block(part);
             } else if (d[1] == 0x08) {
-                ESP_LOGI(TAG, "PUSH complete — tag refreshing; disconnecting");
+                ESP_LOGI(TAG, "PUSH complete - tag refreshing; disconnecting");
                 s_push_ok = true;
                 ble_gap_terminate(s_push_conn, BLE_ERR_REM_USER_CONN_TERM);
             } else ESP_LOGE(TAG, "PUSH transfer error %d", d[1]);
@@ -399,8 +392,7 @@ static int push_disc_chr_cb(uint16_t conn, const struct ble_gatt_error *err,
             return 0;
         }
         s_cccd = 0;
-        // Discover descriptors between fef1 and fef2 so we get fef1's CCCD, not
-        // fef2's. (NimBLE searches after start_handle, so s_fef1 includes +1.)
+        // Descriptors in [fef1, fef2) to find fef1's CCCD. NimBLE searches after start_handle.
         ESP_LOGI(TAG, "PUSH fef1=%u fef2=%u; discovering fef1 descriptors", s_fef1, s_fef2);
         ble_gattc_disc_all_dscs(conn, s_fef1, s_fef2 - 1, push_disc_dsc_cb, NULL);
     }
@@ -436,7 +428,7 @@ static int push_subscribe_cb(uint16_t conn, const struct ble_gatt_error *err,
         ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
         return 0;
     }
-    // Read the CCCD back to confirm notifications were enabled on the tag.
+    // Read CCCD back to confirm notify is enabled.
     ESP_LOGI(TAG, "PUSH subscribed; reading CCCD back to confirm");
     ble_gattc_read(conn, s_cccd, push_cccd_read_cb, NULL);
     return 0;
@@ -473,7 +465,7 @@ static int push_disc_scan_cb(struct ble_gap_event *event, void *arg)
         }
     } else if (event->type == BLE_GAP_EVENT_DISC_COMPLETE) {
         if (s_pushing && !s_push_found) {
-            ESP_LOGE(TAG, "PUSH target never advertised — wake the tag and retry");
+            ESP_LOGE(TAG, "PUSH target never advertised - wake the tag and retry");
             push_cleanup();
         }
     }
@@ -483,7 +475,7 @@ static int push_disc_scan_cb(struct ble_gap_event *event, void *arg)
 esp_err_t ble_push(const char *mac, int w, int h, const uint8_t *bits, size_t bits_len)
 {
     if (!s_nimble_ready) return ESP_FAIL;
-    if (s_pushing) { ESP_LOGW(TAG, "PUSH busy — another transfer in progress"); return ESP_FAIL; }
+    if (s_pushing) { ESP_LOGW(TAG, "PUSH busy - another transfer in progress"); return ESP_FAIL; }
     if (bits_len == 0) return ESP_FAIL;
 
     ble_addr_t target;
@@ -516,10 +508,7 @@ esp_err_t ble_push(const char *mac, int w, int h, const uint8_t *bits, size_t bi
     int rc = ble_gap_disc(own, 30000, &dp, push_disc_scan_cb, NULL);
     if (rc != 0) { ESP_LOGE(TAG, "PUSH ble_gap_disc rc=%d", rc); push_cleanup(); return ESP_FAIL; }
 
-    // Block until the async transfer finishes so /push reports the real outcome
-    // and the host can serialise pushes. The NimBLE host task runs the GAP/GATT
-    // callbacks and clears s_pushing on completion, failure, or watchdog; we
-    // yield here so they can run.
+    // Block until the transfer finishes. Callbacks clear s_pushing; the 30s watchdog caps it.
     for (int i = 0; i < 760 && s_pushing; i++) vTaskDelay(pdMS_TO_TICKS(50)); // ~38s cap
     if (s_pushing) { ESP_LOGW(TAG, "PUSH wait timed out; abandoning"); return ESP_FAIL; }
     ESP_LOGI(TAG, "PUSH finished ok=%d", s_push_ok);

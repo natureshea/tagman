@@ -6,7 +6,7 @@ COPY go.mod ./
 COPY go.su[m] ./
 RUN go mod download || true
 COPY . .
-# Pure-Go sqlite (modernc) means CGO_ENABLED=0 works — static binary.
+# Pure-Go sqlite (modernc) means CGO_ENABLED=0 works - static binary.
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/inktags ./cmd/inktags
 
 # Runtime stage

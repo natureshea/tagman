@@ -1,5 +1,5 @@
-// Package items defines the read-only catalog abstraction the app depends on.
-// Real Clover and the fake source are interchangeable implementations of Source.
+// Package items is the read-only catalog abstraction. Clover and the fake
+// source both implement Source.
 package items
 
 import (
@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// Item is the app's view of a catalog item.
 type Item struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
@@ -19,11 +18,7 @@ type Item struct {
 
 func (i Item) Dollars() float64 { return float64(i.Price) / 100.0 }
 
-// Source is the read-only catalog backend interface.
-//
-//	List         — full catalog (cache warming / picker)
-//	Get          — one item's current state (live price at render)
-//	ChangedSince — items modified at/after t (drives re-push polling)
+// Source is the read-only catalog backend.
 type Source interface {
 	List(ctx context.Context) ([]Item, error)
 	Get(ctx context.Context, id string) (Item, error)
@@ -31,8 +26,7 @@ type Source interface {
 	Name() string // "clover" | "fake"
 }
 
-// Cache is a backend-agnostic in-memory item cache with substring search,
-// warmed from any Source by the poller.
+// Cache holds the catalog in memory with substring search. The poller warms it.
 type Cache struct {
 	mu     sync.RWMutex
 	items  []Item

@@ -7,7 +7,7 @@ import (
 	"inktags/internal/items"
 )
 
-// Source adapts the Clover REST client to the items.Source interface.
+// Source adapts Client to items.Source.
 type Source struct {
 	c *Client
 }

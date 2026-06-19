@@ -1,5 +1,5 @@
-// Package clover is a read-only client for the Clover REST API. It only ever
-// GETs: Thrive owns pricing and Clover is a downstream mirror we read from.
+// Package clover is a read-only client for the Clover REST API. Thrive owns
+// pricing; Clover is a mirror we only GET from.
 package clover
 
 import (
@@ -13,11 +13,10 @@ import (
 	"time"
 )
 
-// Config holds the credentials and target environment, supplied at startup.
+// Config holds credentials and the target environment.
 //
-//	BaseURL examples:
-//	  production (North America): https://api.clover.com
-//	  sandbox:                    https://apisandbox.dev.clover.com
+//	BaseURL: https://api.clover.com (prod, NA) or
+//	         https://apisandbox.dev.clover.com (sandbox)
 type Config struct {
 	BaseURL    string // no trailing slash
 	MerchantID string
@@ -37,8 +36,7 @@ func New(cfg Config) *Client {
 	}
 }
 
-// Item is the subset of Clover's item object we care about. Clover returns
-// price as an integer number of cents (e.g. 1200 == $12.00).
+// Item is the subset of Clover's item object we use. Price is cents.
 type Item struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -48,12 +46,12 @@ type Item struct {
 	ModifiedTime int64  `json:"modifiedTime"` // unix milliseconds (13 digits)
 }
 
-// elementsResponse is Clover's standard list envelope: {"elements":[...]}.
+// Clover's list envelope: {"elements":[...]}.
 type elementsResponse struct {
 	Elements []Item `json:"elements"`
 }
 
-// cloverError surfaces non-2xx responses with the body for debugging.
+// cloverError carries the status and body of a non-2xx response.
 type cloverError struct {
 	Status int
 	Body   string
@@ -98,8 +96,8 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 
 const pageLimit = 100 // Clover default; hard cap is 1000.
 
-// ListItems pulls the full catalog, paginating until a short/empty page.
-// Hidden items are skipped.
+// ListItems pulls the full catalog, paginating to the last page. Hidden items
+// are skipped.
 func (c *Client) ListItems(ctx context.Context) ([]Item, error) {
 	var out []Item
 	offset := 0
@@ -128,7 +126,7 @@ func (c *Client) ListItems(ctx context.Context) ([]Item, error) {
 	return out, nil
 }
 
-// GetItem fetches one item's current state, used at render time for live price.
+// GetItem fetches one item's current state.
 func (c *Client) GetItem(ctx context.Context, itemID string) (Item, error) {
 	body, err := c.get(ctx, c.itemsPath()+"/"+url.PathEscape(itemID), nil)
 	if err != nil {
@@ -141,8 +139,8 @@ func (c *Client) GetItem(ctx context.Context, itemID string) (Item, error) {
 	return it, nil
 }
 
-// ChangedSince returns items modified at or after t (the polling primitive).
-// Clover's modifiedTime is unix milliseconds, and the filter uses >=.
+// ChangedSince returns items with modifiedTime >= t. Clover modifiedTime is
+// unix ms.
 func (c *Client) ChangedSince(ctx context.Context, t time.Time) ([]Item, error) {
 	ms := t.UnixMilli()
 	var out []Item
@@ -173,5 +171,4 @@ func (c *Client) itemsPath() string {
 	return "/v3/merchants/" + url.PathEscape(c.cfg.MerchantID) + "/items"
 }
 
-// Dollars is a convenience for display: cents → dollars.
 func (i Item) Dollars() float64 { return float64(i.Price) / 100.0 }

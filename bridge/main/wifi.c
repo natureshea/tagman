@@ -14,7 +14,7 @@ static const char *TAG = "wifi";
 #define NVS_SSID    "ssid"
 #define NVS_PASS    "pass"
 #define AP_SSID     "inktags-bridge-setup"
-#define AP_PASS     "inktags123"   // WPA2 needs >=8 chars; change as desired
+#define AP_PASS     "inktags123"   // WPA2 needs >=8 chars
 
 static EventGroupHandle_t s_wifi_events;
 #define CONNECTED_BIT BIT0
@@ -82,7 +82,7 @@ static void start_config_ap(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
     ESP_ERROR_CHECK(esp_wifi_start());
-    // HTTP server still starts; POST /config to set creds, then device restarts.
+    // HTTP server still starts. POST /config to set creds, then restart.
     strncpy(s_ip, "192.168.4.1", sizeof(s_ip));
 }
 
@@ -117,8 +117,7 @@ bool wifi_start(void)
         return true;
     }
 
-    // Stored creds exist but we couldn't join: fall back to the config portal so
-    // new creds can be set over the AP instead of being stuck retrying.
+    // Stored creds failed to join. Fall back to the config AP.
     ESP_LOGW(TAG, "STA connect failed -> starting config AP for reconfiguration");
     s_retries = 1000;       // stop the disconnect handler from reconnecting
     esp_wifi_stop();        // tear down STA before switching to AP mode

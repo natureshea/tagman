@@ -13,7 +13,7 @@ void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_init());
     }
 
-    // BLE host first (NimBLE) so it's ready when pushes arrive.
+    // NimBLE host first, ready before pushes arrive.
     ble_push_init();
 
     // WiFi: connects as station from NVS creds, or starts config AP.

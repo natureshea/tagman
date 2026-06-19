@@ -6,9 +6,8 @@ import (
 	"sync"
 )
 
-// Router resolves a Transport for a given bridge address, caching one NetBridge
-// per address. When no address is given (no bridges configured), it returns the
-// Fake so the tool still runs.
+// Router resolves a Transport for a bridge address, caching one NetBridge per
+// address. Empty address returns the Fake.
 type Router struct {
 	Log  *slog.Logger
 	fake *Fake

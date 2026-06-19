@@ -26,8 +26,7 @@ var tplFS embed.FS
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// Relative default so `go run ./cmd/inktags` works locally; the container
-	// sets INKTAGS_DB=/data/inktags.db for its mounted volume.
+	// Relative default for local `go run`. The container sets INKTAGS_DB.
 	dbPath := env("INKTAGS_DB", "./data/inktags.db")
 	addr := env("INKTAGS_ADDR", ":8080")
 
@@ -43,11 +42,10 @@ func main() {
 	}
 	defer st.Close()
 
-	// The Router resolves the transport per binding: a NetBridge by address, or
-	// Fake when no bridge is configured.
+	// Router picks the transport per binding: NetBridge by address, else Fake.
 	router := transport.NewRouter(log)
 
-	// Catalog source, selected with INKTAGS_SOURCE=fake|clover.
+	// INKTAGS_SOURCE selects the catalog: fake or clover.
 	var src items.Source
 	var cache *items.Cache
 	sourceKind := env("INKTAGS_SOURCE", "fake")
@@ -82,7 +80,7 @@ func main() {
 
 	srv := web.NewServer(st, router, src, cache, log, tpl)
 
-	// Poller warms the cache and drives change-based re-push.
+	// Poller warms the cache and drives re-push on change.
 	rootCtx, cancelRoot := context.WithCancel(context.Background())
 	defer cancelRoot()
 	poller := &items.Poller{
@@ -123,7 +121,7 @@ func env(k, def string) string {
 	return def
 }
 
-// pollInterval reads CLOVER_POLL_SECONDS (default 180s).
+// pollInterval reads CLOVER_POLL_SECONDS. Default 180s.
 func pollInterval() time.Duration {
 	if v := os.Getenv("CLOVER_POLL_SECONDS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {

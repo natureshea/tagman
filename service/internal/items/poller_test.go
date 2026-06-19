@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// TestPollerDetectsChange drives tick() directly to verify change detection:
-// a bump fires OnChange, and no change fires no callback.
+// TestPollerDetectsChange drives tick() directly. A bump fires OnChange; no
+// change fires nothing.
 func TestPollerDetectsChange(t *testing.T) {
 	t.Run("bump detected", func(t *testing.T) {
 		var logBuf bytes.Buffer
@@ -32,7 +32,7 @@ func TestPollerDetectsChange(t *testing.T) {
 			},
 		}
 
-		// lastPoll in the past so the ChangedSince window covers the bump.
+		// lastPoll in the past: window covers the bump.
 		poller.lastPoll = time.Now().Add(-time.Minute)
 
 		if err := fakeSource.Bump("FAKE-LATTE-002", 599); err != nil {
@@ -78,7 +78,7 @@ func TestPollerDetectsChange(t *testing.T) {
 			},
 		}
 
-		// lastPoll in the future so the ChangedSince window excludes every item.
+		// lastPoll in the future: window excludes every item.
 		poller.lastPoll = time.Now().Add(time.Minute)
 
 		poller.tick(context.Background())
