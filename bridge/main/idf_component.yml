@@ -1,0 +1,8 @@
+## IDF Component Manager manifest for the inktags bridge `main` component.
+##
+## cJSON was removed from the bundled ESP-IDF components in 6.x. Declaring it
+## here means `idf.py build` pulls it from the registry automatically (creating
+## managed_components/ + dependencies.lock) — no manual `idf.py add-dependency`
+## step, and the build is reproducible from a clean checkout.
+dependencies:
+  espressif/cjson: "*"

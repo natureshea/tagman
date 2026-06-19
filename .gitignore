@@ -1,0 +1,14 @@
+# Go service
+service/data/
+service/inktags
+service/*.test
+
+# ESP-IDF firmware build artifacts
+bridge/build/
+bridge/sdkconfig
+bridge/sdkconfig.old
+bridge/dependencies.lock
+bridge/managed_components/
+
+# logs
+*.log

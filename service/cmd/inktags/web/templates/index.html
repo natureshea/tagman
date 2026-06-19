@@ -1,0 +1,283 @@
+{{define "index.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inktags</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 15px/1.5 ui-monospace, monospace; background:#0e0f12; color:#d7dade; margin:0; padding:2rem; }
+  h1 { font-size:1.2rem; letter-spacing:.05em; }
+  .badge { font-size:.75rem; padding:.1rem .4rem; border:1px solid #444; border-radius:3px; color:#9aa; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; }
+  th,td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid #23252b; }
+  th { color:#7f8794; font-weight:normal; font-size:.8rem; text-transform:uppercase; }
+  button { font:inherit; background:#1b1d22; color:#d7dade; border:1px solid #34373f; border-radius:4px; padding:.25rem .6rem; cursor:pointer; }
+  button:hover { border-color:#556; }
+  button:disabled { opacity:.55; cursor:default; }
+  .status { margin-left:.4rem; font-size:.85em; }
+  input { font:inherit; background:#15161a; color:#d7dade; border:1px solid #34373f; border-radius:4px; padding:.3rem .5rem; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; }
+  .muted { color:#6b7280; }
+  .warn-banner { background:#3a1d1d; border:1px solid #7a3535; color:#ffb4b4; padding:.7rem 1rem; border-radius:6px; margin:1rem 0; line-height:1.4; }
+</style>
+</head>
+<body>
+  <h1>inktags</h1>
+
+  {{if not .Healthy}}
+  <div class="warn-banner">⚠ no healthy bridge — {{.HealthDetail}}<br>
+    Bindings will save but will NOT display on a tag until a bridge is reachable. Add one below.</div>
+  {{end}}
+
+  <h2>Bridges</h2>
+  <table>
+    <tr><th>Name</th><th>Address</th><th>Status</th><th></th></tr>
+    {{range .Bridges}}
+    <tr>
+      <td>{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}}</td>
+      <td class="muted">{{.Address}}</td>
+      <td>{{if .Healthy}}<span style="color:#6fe26f">●</span> ok{{else}}<span style="color:#e26f6f">●</span> down{{end}}</td>
+      <td><button onclick="delBridge('{{.ID}}')">×</button></td>
+    </tr>
+    {{else}}
+    <tr><td colspan="4" class="muted">no bridges — add one to reach tags</td></tr>
+    {{end}}
+  </table>
+  <div class="row">
+    <input id="br_name" placeholder="name (e.g. front-counter)" size="20">
+    <input id="br_addr" placeholder="ESP32 IP — no port (firmware is :80), e.g. 192.168.1.68" size="34">
+    <button onclick="addBridge(this)">add bridge</button>
+  </div>
+
+  <h2>Tags in range <button onclick="scanTags(this)">scan</button></h2>
+  <table>
+    <tr><th>Tag #</th><th>MAC</th><th>RSSI</th><th></th></tr>
+    <tbody id="tags">
+      <tr><td colspan="4" class="muted">click “scan” to look for tags (ties up the bridge briefly)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Bind / re-point</h2>
+  <div class="row">
+    <input id="mac" placeholder="tag # or MAC" size="20">
+    <input id="item_search" placeholder="search clover items…" size="24" oninput="searchItems()" autocomplete="off">
+    <button onclick="addToBatch(this)">add</button>
+  </div>
+  <div id="results"></div>
+  <input type="hidden" id="item_id">
+  <div id="picked" class="muted"></div>
+
+  <div id="batchBox" style="display:none; margin-top:.6rem;">
+    <table id="batchList"></table>
+    <button id="bindAllBtn" onclick="bindAll(this)">bind all</button>
+    <button onclick="clearBatch()">clear</button>
+  </div>
+
+  <h2>Current bindings</h2>
+  <table>
+    <tr><th>Tag #</th><th>Item</th><th>Price</th><th>Last pushed</th><th></th></tr>
+    {{range .Bindings}}
+    <tr>
+      <td><strong>{{tagLabel .MAC}}</strong></td>
+      <td>{{.ItemName}} <span class="muted">({{.ItemID}})</span></td>
+      <td>{{if .PriceCents}}${{printf "%.2f" (priceDollars .PriceCents)}}{{end}}</td>
+      <td class="muted">{{if .LastPushedAt}}{{.LastPushedAt.Format "15:04:05"}}{{else}}never{{end}}</td>
+      <td>
+        <button onclick="refresh('{{.MAC}}', this)">refresh</button>
+        <button onclick="del('{{.MAC}}', this)">×</button>
+        <span class="status" data-mac="{{.MAC}}"></span>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="5" class="muted">no bindings yet</td></tr>
+    {{end}}
+  </table>
+
+<script>
+// Disable a button while an async action runs; returns a restore fn.
+function busy(btn, label){
+  if(!btn) return ()=>{};
+  const text = btn.textContent, dis = btn.disabled;
+  btn.disabled = true; if(label) btn.textContent = label;
+  return ()=>{ btn.disabled = dis; btn.textContent = text; };
+}
+
+async function addBridge(btn){
+  const name = document.getElementById('br_name').value;
+  const address = document.getElementById('br_addr').value;
+  if(!address){ alert('address required (host:port)'); return; }
+  const done = busy(btn, 'adding…');
+  try{
+    const r = await fetch('/api/bridges', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, address})});
+    if(r.ok){
+      const d = await r.json();
+      if(!d.healthy){ alert('bridge added but not reachable yet: '+(d.detail||'')); }
+      location.reload();
+    } else { alert('add failed: '+await r.text()); done(); }
+  } catch(e){ alert('add failed: '+e); done(); }
+}
+async function delBridge(id){
+  if(!confirm('remove bridge '+id+'?')) return;
+  const r = await fetch('/api/bridges/'+encodeURIComponent(id), {method:'DELETE'});
+  if(r.ok) location.reload();
+}
+function prefill(mac){ document.getElementById('mac').value = mac; document.getElementById('item_search').focus(); }
+
+// Escape untrusted strings before they go into innerHTML (XSS guard).
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// FF:FF:92:96:60:21 -> 92.96.60.21 (the number printed on the tag)
+function tagLabelJS(mac){ return (mac||'').toUpperCase().replace(/^FF:FF:/,'').split(':').join('.'); }
+let scanResults = [];
+function renderTags(){
+  const tb = document.getElementById('tags');
+  if(!scanResults.length){ tb.innerHTML = '<tr><td colspan="4" class="muted">no tags found yet — click “scan”</td></tr>'; return; }
+  tb.innerHTML = scanResults.map((t,idx) => {
+    const mac = t.mac || t.MAC || '';
+    const rssi = (t.rssi!=null ? t.rssi : (t.RSSI!=null ? t.RSSI : ''));
+    return '<tr><td><strong>'+esc(tagLabelJS(mac))+'</strong></td>'+
+           '<td class="muted">'+esc(mac)+'</td><td>'+esc(rssi)+'</td>'+
+           '<td><button onclick="prefillIdx('+idx+')">bind…</button></td></tr>';
+  }).join('');
+}
+async function scanTags(btn){
+  const done = busy(btn, 'scanning…');
+  const tb = document.getElementById('tags');
+  tb.querySelectorAll('button').forEach(b => b.disabled = true);
+  try{
+    const r = await fetch('/api/scan');
+    scanResults = (r.ok ? await r.json() : []) || [];
+    renderTags();
+  } catch(e){
+    tb.querySelectorAll('button').forEach(b => b.disabled = false);
+    alert('scan failed: ' + (e && e.message || e));
+  }
+  done();
+}
+function prefillIdx(idx){ const t = scanResults[idx]; if(t) prefill(t.mac || t.MAC || ''); }
+
+let searchTimer = null;
+let searchResults = [];
+function searchItems(){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = document.getElementById('item_search').value;
+    const r = await fetch('/api/items?q=' + encodeURIComponent(q));
+    searchResults = (await r.json()) || [];
+    const box = document.getElementById('results');
+    if(!searchResults.length){ box.innerHTML = '<div class="muted">no matches</div>'; return; }
+    // index-based onclick: no untrusted name is embedded in markup/JS
+    box.innerHTML = searchResults.slice(0,20).map((it,idx) =>
+      '<div class="row"><button onclick="pickIdx('+idx+')">' +
+      esc(it.name||'(unnamed)') + ' — $' + ((it.price||0)/100).toFixed(2) + '</button></div>'
+    ).join('');
+  }, 200);
+}
+function pickIdx(idx){ const it = searchResults[idx]; if(it) pick(it.id, it.name||'', it.price||0); }
+let lastPick = null;
+function pick(id, name, price){
+  lastPick = {id, name, price};
+  document.getElementById('item_id').value = id;
+  document.getElementById('picked').textContent = 'selected: ' + name + ' ($' + (price/100).toFixed(2) + ')';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('item_search').value = name;
+}
+
+// Staging list: build up several (tag -> item) pairs, then bind all.
+let batch = [];
+function addToBatch(){
+  const mac = document.getElementById('mac').value.trim();
+  const item_id = document.getElementById('item_id').value;
+  if(!mac || !item_id){ alert('enter a tag and pick an item first'); return; }
+  const name  = (lastPick && lastPick.id === item_id) ? lastPick.name  : item_id;
+  const price = (lastPick && lastPick.id === item_id) ? lastPick.price : 0;
+  batch = batch.filter(e => e.mac !== mac); // re-staging a tag replaces its entry
+  batch.push({mac, item_id, name, price});
+  renderBatch();
+  document.getElementById('mac').value = '';
+  document.getElementById('item_search').value = '';
+  document.getElementById('item_id').value = '';
+  document.getElementById('picked').textContent = '';
+  lastPick = null;
+  document.getElementById('mac').focus();
+}
+function renderBatch(){
+  const box = document.getElementById('batchBox');
+  const list = document.getElementById('batchList');
+  if(!batch.length){ box.style.display = 'none'; list.innerHTML = ''; return; }
+  box.style.display = '';
+  list.innerHTML = '<tr><th>#</th><th>Tag #</th><th>Item</th><th>Price</th><th></th></tr>' +
+    batch.map((e,i) =>
+      '<tr><td class="muted">'+(i+1)+'</td>'+
+      '<td><strong>'+esc(tagLabelJS(e.mac))+'</strong></td>'+
+      '<td>'+esc(e.name)+'</td>'+
+      '<td>$'+((e.price||0)/100).toFixed(2)+'</td>'+
+      '<td><button onclick="removeFromBatch('+i+')">×</button></td></tr>'
+    ).join('');
+  document.getElementById('bindAllBtn').textContent = 'bind all ('+batch.length+')';
+}
+function removeFromBatch(i){ batch.splice(i,1); renderBatch(); }
+function clearBatch(){ batch = []; renderBatch(); }
+async function bindAll(btn){
+  if(!batch.length){ alert('add some tags first'); return; }
+  const done = busy(btn, 'binding…');
+  try{
+    // Server preserves staged order, so pushes drain in the listed order.
+    const r = await fetch('/api/bindings/batch', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(batch.map(e => ({mac:e.mac, item_id:e.item_id})))});
+    if(r.ok){
+      const d = await r.json();
+      if(d.skipped && d.skipped.length){ alert('some entries were skipped:\n'+d.skipped.join('\n')); }
+      location.reload();
+    } else { alert('bind failed: '+await r.text()); done(); }
+  } catch(e){ alert('bind failed: '+e); done(); }
+}
+async function refresh(mac, btn){
+  const done = busy(btn, '…');
+  try{
+    const r = await fetch('/api/bindings/'+encodeURIComponent(mac)+'/refresh', {method:'POST'});
+    if(!r.ok){ alert('refresh failed: '+await r.text()); }
+    else { setStatus(mac, {state:'queued'}); startPoll(); }
+  } catch(e){ alert('refresh failed: '+e); }
+  done();
+}
+async function del(mac, btn){
+  if(!confirm('delete binding for '+mac+'?')) return;
+  const done = busy(btn);
+  const r = await fetch('/api/bindings/'+encodeURIComponent(mac), {method:'DELETE'});
+  if(r.ok) location.reload(); else done();
+}
+
+// Push status: poll /api/queue and reflect it inline.
+const ST_TEXT  = {queued:'queued', pushing:'pushing…', ok:'pushed ✓', failed:'failed ✗'};
+const ST_COLOR = {queued:'#c8b35a', pushing:'#5aa0c8', ok:'#5ac87a', failed:'#c85a5a'};
+function setStatus(mac, st){
+  document.querySelectorAll('.status[data-mac="'+(window.CSS&&CSS.escape?CSS.escape(mac):mac)+'"]').forEach(el=>{
+    el.textContent = ST_TEXT[st.state] || st.state || '';
+    el.style.color = ST_COLOR[st.state] || '';
+    el.title = st.detail || '';
+  });
+}
+async function pollOnce(){
+  let map = {};
+  try{ const r = await fetch('/api/queue'); if(r.ok) map = await r.json(); }catch(e){ return false; }
+  let active = false;
+  document.querySelectorAll('.status[data-mac]').forEach(el=>{
+    const st = map[el.getAttribute('data-mac')];
+    if(st){ setStatus(el.getAttribute('data-mac'), st); if(st.state==='queued'||st.state==='pushing') active = true; }
+  });
+  return active;
+}
+let polling = false;
+async function startPoll(){
+  if(polling) return; polling = true;
+  try{
+    do { await new Promise(r=>setTimeout(r, 1200)); } while(await pollOnce());
+  } finally { polling = false; }
+}
+// On load, paint current statuses and keep polling while work is in flight.
+pollOnce().then(active => { if(active) startPoll(); });
+</script>
+</body>
+</html>{{end}}

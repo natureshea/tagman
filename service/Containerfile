@@ -1,0 +1,21 @@
+# Build stage
+FROM docker.io/library/golang:1.23-alpine AS build
+WORKDIR /src
+COPY go.mod ./
+# go.sum will be generated on first `go mod tidy`; copy if present
+COPY go.su[m] ./
+RUN go mod download || true
+COPY . .
+# Pure-Go sqlite (modernc) means CGO_ENABLED=0 works — static binary.
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/inktags ./cmd/inktags
+
+# Runtime stage
+FROM docker.io/library/alpine:3.20
+RUN adduser -D -u 10001 inktags
+COPY --from=build /out/inktags /usr/local/bin/inktags
+USER inktags
+ENV INKTAGS_DB=/data/inktags.db
+ENV INKTAGS_ADDR=:8080
+EXPOSE 8080
+VOLUME ["/data"]
+ENTRYPOINT ["/usr/local/bin/inktags"]
