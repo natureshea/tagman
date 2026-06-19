@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -61,40 +62,70 @@ func (e *cloverError) Error() string {
 	return fmt.Sprintf("clover api: status=%d body=%s", e.Status, e.Body)
 }
 
+// get issues a GET and retries on 429, honoring Retry-After (else exponential
+// backoff). Clover rate-limits at roughly 16 req/sec.
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, error) {
 	u := c.cfg.BaseURL + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.cfg.APIToken)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	buf := make([]byte, 0, 64*1024)
-	tmp := make([]byte, 32*1024)
-	for {
-		n, rerr := resp.Body.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if rerr != nil {
-			break
+	const maxAttempts = 6
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
 		}
+		req.Header.Set("Authorization", "Bearer "+c.cfg.APIToken)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxAttempts {
+			if err := sleepCtx(ctx, retryAfter(resp.Header, attempt)); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, &cloverError{Status: resp.StatusCode, Body: string(body)}
+		}
+		return body, nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &cloverError{Status: resp.StatusCode, Body: string(buf)}
-	}
-	return buf, nil
 }
 
-const pageLimit = 100 // Clover default; hard cap is 1000.
+// retryAfter returns the wait before a 429 retry: the Retry-After header in
+// seconds if present, otherwise 1s, 2s, 4s, ... capped at 30s.
+func retryAfter(h http.Header, attempt int) time.Duration {
+	if v := strings.TrimSpace(h.Get("Retry-After")); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	d := time.Duration(1<<uint(attempt-1)) * time.Second
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	return d
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+const (
+	pageLimit = 100                    // Clover default; hard cap is 1000.
+	pageGap   = 120 * time.Millisecond // spacing between pages, under the rate limit
+)
 
 // ListItems pulls the full catalog, paginating to the last page. Hidden items
 // are skipped.
@@ -122,6 +153,9 @@ func (c *Client) ListItems(ctx context.Context) ([]Item, error) {
 			break // last page
 		}
 		offset += pageLimit
+		if err := sleepCtx(ctx, pageGap); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -163,6 +197,9 @@ func (c *Client) ChangedSince(ctx context.Context, t time.Time) ([]Item, error) 
 			break
 		}
 		offset += pageLimit
+		if err := sleepCtx(ctx, pageGap); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
